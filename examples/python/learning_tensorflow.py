@@ -16,6 +16,8 @@ learning_rate = 0.00025
 # learning_rate = 0.0001
 discount_factor = 0.99
 epochs = 20
+startEpoch = 10
+
 learning_steps_per_epoch = 2000
 replay_memory_size = 10000
 
@@ -30,12 +32,15 @@ frame_repeat = 12
 resolution = (30, 45)
 episodes_to_watch = 10
 
-model_savefile = "/tmp/model.ckpt"
+model_savefile = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedModels_1frame/model.ckpt"
 save_model = True
-load_model = False
+load_model = True
 skip_learning = False
+trainConvNets = False
+
 # Configuration file path
-config_file_path = "../../scenarios/simpler_basic.cfg"
+#config_file_path = "../../scenarios/simpler_basic.cfg"
+config_file_path = "../../scenarios/defend_the_line.cfg"
 
 
 # config_file_path = "../../scenarios/rocket_basic.cfg"
@@ -77,7 +82,6 @@ class ReplayMemory:
         i = sample(range(0, self.size), sample_size)
         return self.s1[i], self.a[i], self.s2[i], self.isterminal[i], self.r[i]
 
-
 def create_network(session, available_actions_count):
     # Create the input variables
     s1_ = tf.placeholder(tf.float32, [None] + list(resolution) + [1], name="State")
@@ -88,11 +92,11 @@ def create_network(session, available_actions_count):
     conv1 = tf.contrib.layers.convolution2d(s1_, num_outputs=8, kernel_size=[6, 6], stride=[3, 3],
                                             activation_fn=tf.nn.relu,
                                             weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-                                            biases_initializer=tf.constant_initializer(0.1))
+                                            biases_initializer=tf.constant_initializer(0.1), trainable=trainConvNets)
     conv2 = tf.contrib.layers.convolution2d(conv1, num_outputs=8, kernel_size=[3, 3], stride=[2, 2],
                                             activation_fn=tf.nn.relu,
                                             weights_initializer=tf.contrib.layers.xavier_initializer_conv2d(),
-                                            biases_initializer=tf.constant_initializer(0.1))
+                                            biases_initializer=tf.constant_initializer(0.1), trainable = trainConvNets)
     conv2_flat = tf.contrib.layers.flatten(conv2)
     fc1 = tf.contrib.layers.fully_connected(conv2_flat, num_outputs=128, activation_fn=tf.nn.relu,
                                             weights_initializer=tf.contrib.layers.xavier_initializer(),
@@ -221,6 +225,7 @@ if __name__ == '__main__':
     time_start = time()
     if not skip_learning:
         for epoch in range(epochs):
+            epoch = epoch + startEpoch
             print("\nEpoch %d\n-------" % (epoch + 1))
             train_episodes_finished = 0
             train_scores = []
