@@ -9,7 +9,7 @@ import itertools as it
 import time
 import glob
 
-images_savefileFolder = "/Users/florianpirchner/work/tensorflow/git/ViZDoom/examples/python/savedImages_deconv"
+images_savefileFolder = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedImages_deconv"
 
 def crop():
     for filename in glob.glob(images_savefileFolder+'/*.png'):

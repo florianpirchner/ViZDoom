@@ -6,13 +6,23 @@ Reference: "Auto-Encoding Variational Bayes" https://arxiv.org/abs/1312.6114
 import numpy as np
 #import matplotlib.pyplot as plt
 from scipy.stats import norm
+import cv2
 
+import tensorflow as tf
 from keras.layers import Input, Dense, Lambda, Flatten, Reshape, Layer
 from keras.layers import Conv2D, Conv2DTranspose
 from keras.models import Model
+from keras.callbacks import Callback
 from keras import backend as K
 from keras import metrics
 from keras.datasets import mnist
+
+
+model_savefolder = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedModels_deconv_orig/"
+model_savefile = model_savefolder + "model_weights.h5"
+load_model = True
+save_model = True
+skip_learning = False
 
 # input image dimensions
 img_rows, img_cols, img_chns = 28, 28, 1
@@ -29,29 +39,56 @@ else:
 latent_dim = 2
 intermediate_dim = 128
 epsilon_std = 1.0
-epochs = 5
+epochs = 1
+
+sess = tf.Session()
+K.set_session(sess)
+
+def variable_summaries(sumName, var):
+  """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+  with tf.name_scope(sumName):
+    with tf.name_scope('summaries'):
+      mean = tf.reduce_mean(var)
+      tf.summary.scalar('mean', mean)
+      with tf.name_scope('stddev'):
+        stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+      tf.summary.scalar('stddev', stddev)
+      tf.summary.scalar('max', tf.reduce_max(var))
+      tf.summary.scalar('min', tf.reduce_min(var))
+      tf.summary.histogram('histogram', var)
+
 
 x = Input(shape=original_img_size)
 conv_1 = Conv2D(img_chns,
                 kernel_size=(2, 2),
                 padding='same', activation='relu')(x)
+variable_summaries('conv_1', conv_1)
+
 conv_2 = Conv2D(filters,
                 kernel_size=(2, 2),
                 padding='same', activation='relu',
                 strides=(2, 2))(conv_1)
+variable_summaries('conv_2', conv_2)
+
 conv_3 = Conv2D(filters,
                 kernel_size=num_conv,
                 padding='same', activation='relu',
                 strides=1)(conv_2)
+variable_summaries('conv_3', conv_3)
 conv_4 = Conv2D(filters,
                 kernel_size=num_conv,
                 padding='same', activation='relu',
                 strides=1)(conv_3)
+variable_summaries('conv_4', conv_4)                
 flat = Flatten()(conv_4)
 hidden = Dense(intermediate_dim, activation='relu')(flat)
+variable_summaries('hidden', hidden)  
 
 z_mean = Dense(latent_dim)(hidden)
+variable_summaries('z_mean', z_mean)  
+
 z_log_var = Dense(latent_dim)(hidden)
+variable_summaries('z_log_var', z_log_var)  
 
 
 def sampling(args):
@@ -137,27 +174,78 @@ vae = Model(x, y)
 vae.compile(optimizer='rmsprop', loss=None)
 vae.summary()
 
+# Merge all the summaries and write them out to /tmp/mnist_logs (by default)
+merged = tf.summary.merge_all()
+train_writer = tf.summary.FileWriter(model_savefolder + '/train',
+                                      sess.graph)
+test_writer = tf.summary.FileWriter(model_savefolder + '/test')
+
 # train the VAE on MNIST digits
 (x_train, _), (x_test, y_test) = mnist.load_data()
 
 x_train = x_train.astype('float32') / 255.
 x_train = x_train.reshape((x_train.shape[0],) + original_img_size)
+x_train = x_train[0:1000, : , :]
 x_test = x_test.astype('float32') / 255.
 x_test = x_test.reshape((x_test.shape[0],) + original_img_size)
+x_test = x_test[0:1000, : , :]
 
 print('x_train.shape:', x_train.shape)
 
-vae.fit(x_train,
-        shuffle=True,
-        epochs=epochs,
-        batch_size=batch_size,
-        validation_data=(x_test, None))
+if load_model:
+  print("--- loading model")
+  vae.load_weights(model_savefile, by_name=True)
+
+if save_model:
+  # save the model
+  vae.save_weights(model_savefile)
+
+
+class LossHistory(Callback):
+    def on_train_begin(self, logs={}):
+        self.losses = []
+
+    def on_epoch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
+
+        feed_dict = {x: x_test}
+        summary = sess.run([merged], feed_dict=feed_dict)
+        test_writer.add_summary(summary)
+
+
+if not skip_learning:
+  #tbCallBack = keras.callbacks.TensorBoard(log_dir=tensorboard_savefile, 
+  #  histogram_freq=1, 
+  #  write_graph=True)
+  tbCallBack = LossHistory()
+  tbCallBack.set_model(vae)
+
+  vae.fit(x_train,
+          shuffle=True,
+          epochs=epochs,
+          batch_size=batch_size,
+          validation_data=(x_test, None), 
+          callbacks=[tbCallBack])
+
+if save_model:
+  # save the model
+  vae.save_weights(model_savefile)
+
+testPredict = vae.predict(x_test[:1, :, :, :], batch_size=batch_size)
+cv2.imshow("original", cv2.subtract(x_test[0, :, :, :], testPredict[0, :, :, :]))
+#cv2.imshow("predicted", testPredict[0, :, :, :])
+cv2.waitKey(0)
 
 # build a model to project inputs on the latent space
 encoder = Model(x, z_mean)
 
 # display a 2D plot of the digit classes in the latent space
 x_test_encoded = encoder.predict(x_test, batch_size=batch_size)
+
+#cv2.imshow("original", x_test[0])
+#cv2.imshow("encoded", x_test_encoded[0])
+#cv2.waitKey(0)
+
 #plt.figure(figsize=(6, 6))
 #plt.scatter(x_test_encoded[:, 0], x_test_encoded[:, 1], c=y_test)
 #plt.colorbar()
@@ -189,8 +277,13 @@ for i, yi in enumerate(grid_x):
         z_sample = np.tile(z_sample, batch_size).reshape(batch_size, 2)
         x_decoded = generator.predict(z_sample, batch_size=batch_size)
         digit = x_decoded[0].reshape(digit_size, digit_size)
+        #cv2.imshow("figure", digit)
+        #cv2.waitKey(0)
         figure[i * digit_size: (i + 1) * digit_size,
                j * digit_size: (j + 1) * digit_size] = digit
+
+cv2.imshow("figure", figure)
+cv2.waitKey(0)
 
 #plt.figure(figsize=(10, 10))
 #plt.imshow(figure, cmap='Greys_r')

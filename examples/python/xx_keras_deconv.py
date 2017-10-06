@@ -39,7 +39,7 @@ batch_size = 100
 #config_file_path = "../../scenarios/simpler_basic.cfg"
 config_file_path = "../../scenarios/defend_the_line.cfg"
 # number of images from game
-sample_size = 20000
+sample_size = 60000
 
 if K.image_data_format() == 'channels_first':
     original_img_size = (img_chns, img_rows, img_cols)

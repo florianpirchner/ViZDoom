@@ -12,19 +12,21 @@ import itertools as it
 import time
 import glob
 
+from keras.optimizers import Adam, RMSprop
 from keras.layers import Input, Dense, Lambda, Flatten, Reshape, Layer
 from keras.layers import Conv2D, Conv2DTranspose
 from keras.models import Model
 from keras import backend as K
 from keras import metrics
 from keras.datasets import mnist
+from keras.callbacks import TensorBoard
 
-
-images_savefile = "/Users/florianpirchner/work/tensorflow/git/ViZDoom/examples/python/savedImages_deconv/defend_the_line_"
-images_savefileFolder = "/Users/florianpirchner/work/tensorflow/git/ViZDoom/examples/python/savedImages_deconv"
-model_savefile = "/Users/florianpirchner/work/tensorflow/git/ViZDoom/examples/python/savedModels_deconv/model_weights.h5"
+images_savefile = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedImages_deconv/defend_the_line_"
+images_savefileFolder = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedImages_deconv"
+model_savefile = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedModels_deconv/model_weights.h5"
+tensorboard_savefile = "/Users/florianpirchner/Work/dev/tensorflow/git/ViZDoom/examples/python/savedModels_deconv/Graph"
 save_model = True
-load_model = True
+load_model = False
 skip_learning = False
 collectImagesFromFolder = True
 
@@ -40,16 +42,16 @@ batch_size = 250
 #config_file_path = "../../scenarios/simpler_basic.cfg"
 config_file_path = "../../scenarios/defend_the_line.cfg"
 # number of images from game
-sample_size = 20000
+sample_size = 2000
 
 if K.image_data_format() == 'channels_first':
     original_img_size = (img_chns, img_rows, img_cols)
 else:
     original_img_size = (img_rows, img_cols, img_chns)
-latent_dim = 100
+latent_dim = 10
 intermediate_dim = 128
 epsilon_std = 1.0
-epochs = 500
+epochs = 10
 
 x = Input(shape=original_img_size)
 conv_1 = Conv2D(img_chns,
@@ -152,7 +154,10 @@ class CustomVariationalLayer(Layer):
 
 y = CustomVariationalLayer()([x, x_decoded_mean_squash])
 vae = Model(x, y)
-vae.compile(optimizer='rmsprop', loss=None)
+
+optimizer = RMSprop(lr=0.0000001)
+#optimizer = Adam(lr=0.0000001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+vae.compile(optimizer=optimizer, loss=None)
 vae.summary()
 
 
@@ -180,11 +185,17 @@ valData = images[:250, :, :, :]
 
 if not skip_learning:
   #print("shape valData ", valData.shape)
-  vae.fit(images,
+  tbCallBack = TensorBoard(log_dir=tensorboard_savefile, 
+    histogram_freq=1, 
+    write_graph=True)
+  tbCallBack.set_model(vae)
+
+  vae.fit(images[:sample_size, :, :, :],
           shuffle=True,
           epochs=epochs,
           batch_size=batch_size,
-          validation_data=(valData, None))
+          validation_data=(valData, None), 
+          callbacks=[tbCallBack])
 
   # save the model
   vae.save_weights(model_savefile)
